@@ -1,7 +1,9 @@
+from __future__ import division 
 import numpy as np
 import tensorflow as tf
 import random
 import scipy.signal
+
 
 seed = 1
 random.seed(seed)
@@ -14,31 +16,128 @@ def discount(x, gamma):
     assert x.ndim >= 1
     return scipy.signal.lfilter([1], [1, -gamma], x[::-1], axis=0)[::-1]
 
+def gauss_prob(mu, logstd, x):
+    std = tf.exp(logstd)
+    var = tf.square(std)
+    gp = tf.exp(-(x - mu)/(2*var)) / ((2*np.pi)**.5 * std)
+    return  tf.reduce_prod(gp, [1])
+
+def gauss_log_prob(mu, logstd, x):
+    var = tf.exp(2*logstd)
+    gp = -tf.square(x - mu)/(2*var) - .5*tf.log(tf.constant(2*np.pi)) - logstd
+    return  tf.reduce_sum(gp, [1])
+
+
+def gauss_selfKL_firstfixed(mu, logstd):
+    # basically:  compute KL with yourself, where the first
+    # argument is treated as a constant.  I can do it, totally.
+    mu1, logstd1 = map(tf.stop_gradient, [mu, logstd])
+    mu2, logstd2 = mu, logstd
+
+    return gauss_KL(mu1, logstd1, mu2, logstd2)
+
+
+def gauss_KL(mu1, logstd1, mu2, logstd2):
+    # basically:  compute KL with yourself, where the first
+    # argument is treated as a constant.  I can do it, totally.
+    var1 = tf.exp(2*logstd1)
+    var2 = tf.exp(2*logstd2)
+
+    kl = tf.reduce_sum(logstd2 - logstd1 + (var1 + tf.square(mu1 - mu2))/(2*var2) - 0.5) 
+    return kl
+
+
+def gauss_ent(mu, logstd):
+    h = tf.reduce_sum(logstd + tf.constant(0.5*np.log(2*np.pi*np.e), tf.float32))
+    return h
+
+def gauss_sample(mu, logstd):
+    return mu + tf.exp(logstd)*tf.random_normal(tf.shape(logstd))
+
+
 def rollout(env, agent, max_pathlength, n_timesteps):
     paths = []
     timesteps_sofar = 0
     while timesteps_sofar < n_timesteps:
         obs, actions, rewards, action_dists = [], [], [], []
+        if np.random.randint(0, 100) == 0:
+            env.monitor.configure(video=True)
+        else:
+            env.monitor.configure(video=False)
         ob = env.reset()
         for _ in xrange(max_pathlength):
-            action, action_dist, ob = agent.act(ob)
+            timesteps_sofar += 1
             obs.append(ob)
+            action, info = agent.act(ob)
             actions.append(action)
-            action_dists.append(action_dist)
+            action_dists.append(info.get("action_dist", []))
             res = env.step(action)
             ob = res[0]
             rewards.append(res[1])
-            if res[2]:
+            if res[2] or timesteps_sofar == n_timesteps: #i.e., if done
                 path = {"obs": np.concatenate(np.expand_dims(obs, 0)),
                         "action_dists": np.concatenate(action_dists),
                         "rewards": np.array(rewards),
                         "actions": np.array(actions)}
                 paths.append(path)
-                agent.prev_action *= 0.0
-                agent.prev_obs *= 0.0
                 break
-        timesteps_sofar += len(path["rewards"])
     return paths
+
+
+
+class Filter:
+    def __init__(self, filter_mean=True):
+        self.m1 = 0
+        self.v = 0
+        self.n = 0.
+        self.filter_mean = filter_mean
+
+    def __call__(self, o):
+        self.m1 = self.m1 * (self.n / (self.n + 1)) + o    * 1/(1 + self.n)
+        self.v = self.v * (self.n / (self.n + 1)) + (o - self.m1)**2 * 1/(1 + self.n)
+        self.std = (self.v + 1e-6)**.5 # std
+        self.n += 1
+        if self.filter_mean: 
+            o1 =  (o - self.m1)/self.std
+        else:
+            o1 =  o/self.std
+        o1 = (o1 > 10) * 10 + (o1 < -10)* (-10) + (o1 < 10) * (o1 > -10) * o1 
+        return o1
+filter = Filter()
+filter_std = Filter()
+
+def rollout_contin(env, agent, max_pathlength, n_timesteps, render=False):
+    paths = []
+    timesteps_sofar = 0
+    first = True
+    while timesteps_sofar < n_timesteps:
+        obs, actions, rewards, action_dists_mu, action_dists_logstd = [], [], [], [], []
+        #env.monitor.configure()
+        ob = filter(env.reset())
+        for _ in xrange(max_pathlength):
+            timesteps_sofar += 1
+            obs.append(ob)
+            action, info = agent.act(ob)
+            actions.append(action)
+            action_dists_mu.append(info.get("action_dist_mu", []))
+            action_dists_logstd.append(info.get("action_dist_logstd", []))
+            res = env.step(action)
+            ob = filter(res[0])
+            rewards.append((res[1]))
+            if render and first: env.render()
+            if res[2] or timesteps_sofar == n_timesteps:
+                # forceful termination
+                path = dict2(obs = np.concatenate(np.expand_dims(obs, 0)),
+                             action_dists_mu = np.concatenate(action_dists_mu),
+                             action_dists_logstd = np.concatenate(action_dists_logstd),
+                             rewards = np.array(rewards),
+                             actions =  np.array(actions))
+                paths.append(path)
+                break
+        first = False
+    return paths
+
+
 
 
 class LinearVF(object):
@@ -131,6 +230,7 @@ class GetFlat(object):
 
 
 def slice_2d(x, inds0, inds1):
+    # in tf
     inds0 = tf.cast(inds0, tf.int64)
     inds1 = tf.cast(inds1, tf.int64)
     shape = tf.cast(tf.shape(x), tf.int64)
@@ -140,6 +240,7 @@ def slice_2d(x, inds0, inds1):
 
 
 def linesearch(f, x, fullstep, expected_improve_rate):
+    # in numpy
     accept_ratio = .1
     max_backtracks = 10
     fval = f(x)
@@ -155,6 +256,7 @@ def linesearch(f, x, fullstep, expected_improve_rate):
 
 
 def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
+    # in numpy
     p = b.copy()
     r = b.copy()
     x = np.zeros_like(b)

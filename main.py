@@ -12,6 +12,9 @@ from gym.spaces import Discrete, Box
 import prettytensor as pt
 from space_conversion import SpaceConversionEnv
 import tempfile
+from sys import argv
+print ('python main.py {}'.format(' '.join(argv)))
+
 import argparse
 parser = argparse.ArgumentParser(description='Test the new good lib.')
 parser.add_argument("--task", type=str, default='InvertedDoublePendulum-v0')
@@ -231,3 +234,5 @@ gym.upload(experiment_dir)
 
 print (experiment_dir)
 
+from sys import argv
+print ('python main.py {}'.format(' '.join(argv)))

@@ -112,7 +112,6 @@ def rollout_contin(env, agent, max_pathlength, n_timesteps, render=False):
     first = True
     while timesteps_sofar < n_timesteps:
         obs, actions, rewards, action_dists_mu, action_dists_logstd = [], [], [], [], []
-        #env.monitor.configure()
         ob = filter(env.reset())
         for _ in xrange(max_pathlength):
             timesteps_sofar += 1
@@ -126,7 +125,8 @@ def rollout_contin(env, agent, max_pathlength, n_timesteps, render=False):
             rewards.append((res[1]))
             if render and first: env.render()
             if res[2] or timesteps_sofar == n_timesteps:
-                # forceful termination
+                # forceful termination if timesteps_sofar == n_timesteps
+                # otherwise paths is empty, which also is bad. 
                 path = dict2(obs = np.concatenate(np.expand_dims(obs, 0)),
                              action_dists_mu = np.concatenate(action_dists_mu),
                              action_dists_logstd = np.concatenate(action_dists_logstd),

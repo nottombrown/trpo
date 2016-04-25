@@ -224,15 +224,15 @@ print ("taks = {}".format(args.task))
 env = envs.make(args.task)
 
 
-env.monitor.start(experiment_dir, algorithm_id=algo)
+env.monitor.start(experiment_dir)
 
 agent = ContinTRPOAgent(env)
 agent.learn()
 env.monitor.close()
-gym.upload(experiment_dir)
+gym.upload(experiment_dir, algorithm_id=algo)
 
 
 print (experiment_dir)
 
 from sys import argv
-print ('python main.py {}'.format(' '.join(argv)))
+print ('python {}'.format(' '.join(argv)))

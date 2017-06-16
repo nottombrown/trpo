@@ -1,5 +1,4 @@
 from __future__ import print_function, absolute_import, division
-from utils import *
 import numpy as np
 import random
 import tensorflow as tf
@@ -13,6 +12,10 @@ import prettytensor as pt
 from space_conversion import SpaceConversionEnv
 import tempfile
 from sys import argv
+
+from utils import dict2, dtype, gauss_log_prob, gauss_KL, gauss_selfKL_firstfixed, flatgrad, gauss_ent, var_shape,\
+    GetFlat, SetFromFlat, LinearVF, rollout_contin, discount, conjugate_gradient, linesearch
+
 print ('python main.py {}'.format(' '.join(argv)))
 
 import argparse
@@ -123,7 +126,7 @@ class ContinTRPOAgent(object):
         start_time = time.time()
         numeptotal = 0
 
-        for i in xrange(1, config.n_iter):
+        for i in range(1, config.n_iter):
             # Generating paths.
             paths = rollout_contin(
                 self.env,
@@ -199,7 +202,7 @@ class ContinTRPOAgent(object):
             stats["KL between old and new distribution"] = kloldnew
             stats["Surrogate loss"] = surrafter
             print ("\n********** Iteration {} ************".format(i))
-            for k, v in stats.iteritems():
+            for k, v in stats.items():
                 print(k + ": " + " " * (40 - len(k)) + str(v))
             if entropy != entropy:
                 exit(-1)

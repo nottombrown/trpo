@@ -61,7 +61,7 @@ def rollout(env, agent, max_pathlength, n_timesteps):
     while timesteps_sofar < n_timesteps:
         obs, actions, rewards, action_dists = [], [], [], []
         ob = env.reset()
-        for _ in xrange(max_pathlength):
+        for _ in range(max_pathlength):
             timesteps_sofar += 1
             obs.append(ob)
             action, info = agent.act(ob)
@@ -81,7 +81,7 @@ def rollout(env, agent, max_pathlength, n_timesteps):
 
 
 
-class Filter:
+class FilterObservation:
     def __init__(self, filter_mean=True):
         self.m1 = 0
         self.v = 0
@@ -99,8 +99,7 @@ class Filter:
             o1 =  o/self.std
         o1 = (o1 > 10) * 10 + (o1 < -10)* (-10) + (o1 < 10) * (o1 > -10) * o1 
         return o1
-filter = Filter()
-filter_std = Filter()
+filter_obs = FilterObservation()
 
 def rollout_contin(env, agent, max_pathlength, n_timesteps, render=False):
     paths = []
@@ -108,8 +107,8 @@ def rollout_contin(env, agent, max_pathlength, n_timesteps, render=False):
     first = True
     while timesteps_sofar < n_timesteps:
         obs, actions, rewards, action_dists_mu, action_dists_logstd = [], [], [], [], []
-        ob = filter(env.reset())
-        for _ in xrange(max_pathlength):
+        ob = filter_obs(env.reset())
+        for _ in range(max_pathlength):
             timesteps_sofar += 1
             obs.append(ob)
             action, info = agent.act(ob)
@@ -117,7 +116,7 @@ def rollout_contin(env, agent, max_pathlength, n_timesteps, render=False):
             action_dists_mu.append(info.get("action_dist_mu", []))
             action_dists_logstd.append(info.get("action_dist_logstd", []))
             res = env.step(action)
-            ob = filter(res[0])
+            ob = filter_obs(res[0])
             rewards.append((res[1]))
             if render and first: env.render()
             if res[2] or timesteps_sofar == n_timesteps:
@@ -163,7 +162,7 @@ def cat_sample(prob_nk):
     N = prob_nk.shape[0]
     csprob_nk = np.cumsum(prob_nk, axis=1)
     out = np.zeros(N, dtype='i')
-    for (n, csprob_k, r) in zip(xrange(N), csprob_nk, np.random.rand(N)):
+    for (n, csprob_k, r) in zip(range(N), csprob_nk, np.random.rand(N)):
         for (k, csprob) in enumerate(csprob_k):
             if csprob > r:
                 out[n] = k
@@ -257,7 +256,7 @@ def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
     r = b.copy()
     x = np.zeros_like(b)
     rdotr = r.dot(r)
-    for i in xrange(cg_iters):
+    for i in range(cg_iters):
         z = f_Ax(p)
         v = rdotr / p.dot(z)
         x += v * p

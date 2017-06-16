@@ -224,11 +224,8 @@ print ("taks = {}".format(args.task))
 env = envs.make(args.task)
 
 
-env.monitor.start(experiment_dir)
-
 agent = ContinTRPOAgent(env)
 agent.learn()
-env.monitor.close()
 gym.upload(experiment_dir, algorithm_id=algo)
 
 

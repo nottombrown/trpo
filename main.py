@@ -30,7 +30,8 @@ algo = 'continuous_action_TRPO_nIter={}_maxKl={}_gamma={}'.format(
     args.n_iter, args.max_kl, args.gamma)
 
 class TRPO(object):
-    config = dict2(timesteps_per_batch=args.timesteps_per_batch,
+    config = ConfigObject(
+        timesteps_per_batch=args.timesteps_per_batch,
         max_pathlength=args.max_pathlength,
         gamma=args.gamma,
         n_iter=args.n_iter,
@@ -51,8 +52,8 @@ class TRPO(object):
         act_dim = np.prod(env.action_space.shape)
         self.action = action = tf.placeholder(tf.float32, shape=[None, act_dim])
         self.advant = advant = tf.placeholder(dtype, shape=[None])
-        self.oldaction_dist_mu = old_action_dist_mu = tf.placeholder(dtype, shape=[None, act_dim])
-        self.oldaction_dist_logstd = old_action_dist_logstd = tf.placeholder(dtype, shape=[None, act_dim])
+        self.old_action_dist_mu = old_action_dist_mu = tf.placeholder(dtype, shape=[None, act_dim])
+        self.old_action_dist_logstd = old_action_dist_logstd = tf.placeholder(dtype, shape=[None, act_dim])
 
         # Create neural network.
         action_dist_mu = (pt.wrap(self.obs).
@@ -113,13 +114,13 @@ class TRPO(object):
         act = action_dist_mu + np.exp(action_dist_logstd) * np.random.randn(*action_dist_logstd.shape)
 
         return act.ravel(),\
-            dict2(action_dist_mu=action_dist_mu,
+            ConfigObject(action_dist_mu=action_dist_mu,
                 action_dist_logstd=action_dist_logstd)
 
     def learn(self):
         config = self.config
         start_time = time.time()
-        numeptotal = 0
+        timesteps_elapsed = 0
 
         for i in range(1, config.n_iter):
             # Generating paths.
@@ -153,10 +154,10 @@ class TRPO(object):
             feed = {self.obs: obs_n,
                 self.action: action_n,
                 self.advant: advant_n,
-                self.oldaction_dist_mu: action_dist_mu,
-                self.oldaction_dist_logstd: action_dist_logstd}
+                self.old_action_dist_mu: action_dist_mu,
+                self.old_action_dist_logstd: action_dist_logstd}
 
-            thprev = self.get_flat()
+            theta_prev = self.get_flat()
 
             def fisher_vector_product(p):
                 feed[self.flat_tangent] = p
@@ -171,41 +172,34 @@ class TRPO(object):
 
             fullstep = stepdir / lm
 
-            def loss(th):
-                self.set_from_flat(th)
-                return self.session.run(self.losses[0], feed_dict=feed)
-
-            theta = thprev + fullstep
+            theta = theta_prev + fullstep
             self.set_from_flat(theta)
 
-            surrafter, kloldnew, entropy = self.session.run(
-                self.losses, feed_dict=feed)
+            surrogate_loss, kl_old_new, entropy = self.session.run(self.losses, feed_dict=feed)
 
-            episoderewards = np.array(
+            ep_rewards = np.array(
                 [path["rewards"].sum() for path in paths])
+
             stats = {}
-            numeptotal += len(episoderewards)
-            stats["Total number of episodes"] = numeptotal
-            stats["Average sum of rewards per episode"] = episoderewards.mean()
+            timesteps_elapsed += sum([len(path["rewards"]) for path in paths])
+            stats["Total number of times steps"] = timesteps_elapsed
+            stats["Average sum of rewards per episode"] = ep_rewards.mean()
             stats["Entropy"] = entropy
             stats["Time elapsed"] = "%.2f mins" % ((time.time() - start_time) / 60.0)
-            stats["KL between old and new distribution"] = kloldnew
-            stats["Surrogate loss"] = surrafter
+            stats["KL between old and new distribution"] = kl_old_new
+            stats["Surrogate loss"] = surrogate_loss
             print("\n********** Iteration {} ************".format(i))
             for k, v in stats.items():
                 print(k + ": " + " " * (40 - len(k)) + str(v))
             if entropy != entropy:
                 exit(-1)
 
-experiment_dir = tempfile.mkdtemp()
 logging.getLogger().setLevel(logging.DEBUG)
 
 env = envs.make(args.task)
 
 agent = TRPO(env)
 agent.learn()
-
-print(experiment_dir)
 
 from sys import argv
 

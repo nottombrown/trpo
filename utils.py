@@ -95,7 +95,7 @@ def rollout(env, agent, max_pathlength, n_timesteps, render=False):
             if res[2] or timesteps_elapsed == n_timesteps:
                 # forceful termination if timesteps_sofar == n_timesteps
                 # otherwise paths is empty, which also is bad.
-                path = dict2(obs=np.concatenate(np.expand_dims(obs, 0)),
+                path = ConfigObject(obs=np.concatenate(np.expand_dims(obs, 0)),
                     action_dists_mu=np.concatenate(action_dists_mu),
                     action_dists_logstd=np.concatenate(action_dists_logstd),
                     rewards=np.array(rewards),
@@ -204,7 +204,7 @@ def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
             break
     return x
 
-class dict2(dict):
+class ConfigObject(dict):
     def __init__(self, **kwargs):
         dict.__init__(self, kwargs)
         self.__dict__ = self

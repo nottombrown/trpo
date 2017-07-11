@@ -5,10 +5,7 @@ import tempfile
 import time
 from sys import argv
 
-import gym
-import numpy as np
 import prettytensor as pt
-import tensorflow as tf
 from gym import envs
 from gym.spaces import Box
 
@@ -32,7 +29,7 @@ args = parser.parse_args()
 algo = 'continuous_action_TRPO_nIter={}_maxKl={}_gamma={}'.format(
     args.n_iter, args.max_kl, args.gamma)
 
-class ContinTRPOAgent(object):
+class TRPO(object):
     config = dict2(timesteps_per_batch=args.timesteps_per_batch,
         max_pathlength=args.max_pathlength,
         gamma=args.gamma,
@@ -200,27 +197,13 @@ class ContinTRPOAgent(object):
             if entropy != entropy:
                 exit(-1)
 
-    def __call__(self, observation_n, reward_n, done_n):
-        assert False
-        env = self.env
-        ret = []
-        for o, r, d in zip(observation_n, reward_n, done_n):
-            o = env.observation_convert(o, env._env.observation_space, env.observation_space)
-            obs = np.expand_dims(o, 0)
-            action_dist_n = self.session.run(self.action_dist_n, {self.obs: obs})
-            action = int(np.argmax(action_dist_n, 1)[0])
-            action = env.action_convert(action, env.action_space, env._env.action_space)
-            ret.append(action)
-        return ret
-
 experiment_dir = tempfile.mkdtemp()
 logging.getLogger().setLevel(logging.DEBUG)
-print("taks = {}".format(args.task))
+
 env = envs.make(args.task)
 
-agent = ContinTRPOAgent(env)
+agent = TRPO(env)
 agent.learn()
-gym.upload(experiment_dir, algorithm_id=algo)
 
 print(experiment_dir)
 

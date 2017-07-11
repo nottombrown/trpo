@@ -1,21 +1,23 @@
 from __future__ import print_function, absolute_import, division
-from utils import *
-import numpy as np
-import random
-import tensorflow as tf
-import time
-import os
+
 import logging
-import gym
-from gym import envs, scoreboard
-from gym.spaces import Discrete, Box
-import prettytensor as pt
-from space_conversion import SpaceConversionEnv
 import tempfile
+import time
 from sys import argv
-print ('python main.py {}'.format(' '.join(argv)))
+
+import gym
+import numpy as np
+import prettytensor as pt
+import tensorflow as tf
+from gym import envs
+from gym.spaces import Box
+
+from utils import *
+
+print('python main.py {}'.format(' '.join(argv)))
 
 import argparse
+
 parser = argparse.ArgumentParser(description='Test the new good lib.')
 parser.add_argument("--task", type=str, default='InvertedDoublePendulum-v0')
 parser.add_argument("--timesteps_per_batch", type=int, default=20000)
@@ -25,24 +27,23 @@ parser.add_argument("--gamma", type=float, default=.99)
 parser.add_argument("--max_kl", type=float, default=.001)
 parser.add_argument("--cg_damping", type=float, default=1e-3)
 
-args =  parser.parse_args()
+args = parser.parse_args()
 
 algo = 'continuous_action_TRPO_nIter={}_maxKl={}_gamma={}'.format(
     args.n_iter, args.max_kl, args.gamma)
 
 class ContinTRPOAgent(object):
-
-    config = dict2(timesteps_per_batch = args.timesteps_per_batch,
-                   max_pathlength = args.max_pathlength,
-                   gamma = args.gamma,
-                   n_iter = args.n_iter,
-                   max_kl = args.max_kl,
-                   cg_damping = args.cg_damping)
+    config = dict2(timesteps_per_batch=args.timesteps_per_batch,
+        max_pathlength=args.max_pathlength,
+        gamma=args.gamma,
+        n_iter=args.n_iter,
+        max_kl=args.max_kl,
+        cg_damping=args.cg_damping)
 
     def __init__(self, env):
         self.env = env
-        if not isinstance(env.observation_space, Box) or \
-           not isinstance(env.action_space, Box):
+        if not isinstance(env.observation_space, Box) or\
+                not isinstance(env.action_space, Box):
             print("Both the input space and the output space should be continous.")
             print("(Probably OK to remove the requirement for the input space).")
             exit(-1)
@@ -51,18 +52,18 @@ class ContinTRPOAgent(object):
             dtype, shape=[
                 None, env.observation_space.shape[0]])
         act_dim = np.prod(env.action_space.shape)
-        self.action = action = tf.placeholder(tf.float32, shape=[None, act_dim])  
-        self.advant = advant = tf.placeholder(dtype, shape=[None])  
+        self.action = action = tf.placeholder(tf.float32, shape=[None, act_dim])
+        self.advant = advant = tf.placeholder(dtype, shape=[None])
         self.oldaction_dist_mu = oldaction_dist_mu = tf.placeholder(dtype, shape=[None, act_dim])
         self.oldaction_dist_logstd = oldaction_dist_logstd = tf.placeholder(dtype, shape=[None, act_dim])
 
         # Create neural network.
         action_dist_mu = (pt.wrap(self.obs).
-                         fully_connected(64, activation_fn=tf.nn.relu).
-                         fully_connected(64, activation_fn=tf.nn.relu).
-                         fully_connected(act_dim)) # output means and logstd's.  Good! 
-        action_dist_logstd_param = tf.Variable((.01*np.random.randn(1, act_dim)).astype(np.float32))
-        action_dist_logstd = tf.tile(action_dist_logstd_param, tf.pack((tf.shape(action_dist_mu)[0], 1)))
+            fully_connected(64, activation_fn=tf.nn.relu).
+            fully_connected(64, activation_fn=tf.nn.relu).
+            fully_connected(act_dim))  # output means and logstd's.  Good!
+        action_dist_logstd_param = tf.Variable((.01 * np.random.randn(1, act_dim)).astype(np.float32))
+        action_dist_logstd = tf.tile(action_dist_logstd_param, tf.stack((tf.shape(action_dist_mu)[0], 1)))
 
         eps = 1e-8
         self.action_dist_mu = action_dist_mu
@@ -77,10 +78,10 @@ class ContinTRPOAgent(object):
         Nf = tf.cast(N, dtype)
         surr = -tf.reduce_mean(ratio_n * advant)  # Surrogate loss
         var_list = tf.trainable_variables()
-        
+
         # Introduced the change into here: 
         kl = gauss_KL(oldaction_dist_mu, oldaction_dist_logstd,
-                      action_dist_mu, action_dist_logstd) / Nf
+            action_dist_mu, action_dist_logstd) / Nf
         ent = gauss_ent(action_dist_mu, action_dist_logstd) / Nf
 
         self.losses = [surr, kl, ent]
@@ -107,30 +108,28 @@ class ContinTRPOAgent(object):
 
     def act(self, obs, *args):
         obs = np.expand_dims(obs, 0)
-        action_dist_mu, action_dist_logstd  = \
+        action_dist_mu, action_dist_logstd =\
             self.session.run([self.action_dist_mu, self.action_dist_logstd], {self.obs: obs})
-        
-        act = action_dist_mu + np.exp(action_dist_logstd)*np.random.randn(*action_dist_logstd.shape)
 
-        return act.ravel(), \
-            dict2(action_dist_mu = action_dist_mu,
-                  action_dist_logstd = action_dist_logstd)
-    
+        act = action_dist_mu + np.exp(action_dist_logstd) * np.random.randn(*action_dist_logstd.shape)
 
+        return act.ravel(),\
+            dict2(action_dist_mu=action_dist_mu,
+                action_dist_logstd=action_dist_logstd)
 
     def learn(self, render_freq=50):
         config = self.config
         start_time = time.time()
         numeptotal = 0
 
-        for i in xrange(1, config.n_iter):
+        for i in range(1, config.n_iter):
             # Generating paths.
             paths = rollout_contin(
                 self.env,
                 self,
                 config.max_pathlength,
                 config.timesteps_per_batch,
-                render = False) #(i % render_freq) == 0)
+                render=False)  # (i % render_freq) == 0)
 
             # Computing returns and estimating advantage function.
             for path in paths:
@@ -152,13 +151,11 @@ class ContinTRPOAgent(object):
             # Computing baseline function for next iter.
             self.vf.fit(paths)
 
-
-
             feed = {self.obs: obs_n,
-                    self.action: action_n,
-                    self.advant: advant_n,
-                    self.oldaction_dist_mu: action_dist_mu,
-                    self.oldaction_dist_logstd: action_dist_logstd}
+                self.action: action_n,
+                self.advant: advant_n,
+                self.oldaction_dist_mu: action_dist_mu,
+                self.oldaction_dist_logstd: action_dist_logstd}
 
             thprev = self.gf()
 
@@ -166,14 +163,12 @@ class ContinTRPOAgent(object):
                 feed[self.flat_tangent] = p
                 return self.session.run(self.fvp, feed) + p * config.cg_damping
 
-
             g = self.session.run(self.pg, feed_dict=feed)
             stepdir = conjugate_gradient(fisher_vector_product, -g)
-            shs = (.5 * stepdir.dot(fisher_vector_product(stepdir)) )
+            shs = (.5 * stepdir.dot(fisher_vector_product(stepdir)))
             assert shs > 0
 
-            lm = np.sqrt(shs / config.max_kl) 
-
+            lm = np.sqrt(shs / config.max_kl)
 
             fullstep = stepdir / lm
             neggdotstepdir = -g.dot(stepdir)
@@ -181,6 +176,7 @@ class ContinTRPOAgent(object):
             def loss(th):
                 self.sff(th)
                 return self.session.run(self.losses[0], feed_dict=feed)
+
             theta = linesearch(loss, thprev, fullstep, neggdotstepdir / lm)
             theta = thprev + fullstep
             self.sff(theta)
@@ -198,8 +194,8 @@ class ContinTRPOAgent(object):
             stats["Time elapsed"] = "%.2f mins" % ((time.time() - start_time) / 60.0)
             stats["KL between old and new distribution"] = kloldnew
             stats["Surrogate loss"] = surrafter
-            print ("\n********** Iteration {} ************".format(i))
-            for k, v in stats.iteritems():
+            print("\n********** Iteration {} ************".format(i))
+            for k, v in stats.items():
                 print(k + ": " + " " * (40 - len(k)) + str(v))
             if entropy != entropy:
                 exit(-1)
@@ -209,7 +205,7 @@ class ContinTRPOAgent(object):
         env = self.env
         ret = []
         for o, r, d in zip(observation_n, reward_n, done_n):
-            o = env.observation_convert(o, env._env.observation_space, env.observation_space)  
+            o = env.observation_convert(o, env._env.observation_space, env.observation_space)
             obs = np.expand_dims(o, 0)
             action_dist_n = self.session.run(self.action_dist_n, {self.obs: obs})
             action = int(np.argmax(action_dist_n, 1)[0])
@@ -217,19 +213,17 @@ class ContinTRPOAgent(object):
             ret.append(action)
         return ret
 
-
 experiment_dir = tempfile.mkdtemp()
 logging.getLogger().setLevel(logging.DEBUG)
-print ("taks = {}".format(args.task))
+print("taks = {}".format(args.task))
 env = envs.make(args.task)
-
 
 agent = ContinTRPOAgent(env)
 agent.learn()
 gym.upload(experiment_dir, algorithm_id=algo)
 
-
-print (experiment_dir)
+print(experiment_dir)
 
 from sys import argv
-print ('python {}'.format(' '.join(argv)))
+
+print('python {}'.format(' '.join(argv)))

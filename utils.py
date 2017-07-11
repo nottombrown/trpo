@@ -1,4 +1,4 @@
-from __future__ import division 
+from __future__ import division
 import numpy as np
 import tensorflow as tf
 import random
@@ -43,7 +43,7 @@ def gauss_KL(mu1, logstd1, mu2, logstd2):
     var1 = tf.exp(2*logstd1)
     var2 = tf.exp(2*logstd2)
 
-    kl = tf.reduce_sum(logstd2 - logstd1 + (var1 + tf.square(mu1 - mu2))/(2*var2) - 0.5) 
+    kl = tf.reduce_sum(logstd2 - logstd1 + (var1 + tf.square(mu1 - mu2))/(2*var2) - 0.5)
     return kl
 
 
@@ -61,7 +61,7 @@ def rollout(env, agent, max_pathlength, n_timesteps):
     while timesteps_sofar < n_timesteps:
         obs, actions, rewards, action_dists = [], [], [], []
         ob = env.reset()
-        for _ in xrange(max_pathlength):
+        for _ in range(max_pathlength):
             timesteps_sofar += 1
             obs.append(ob)
             action, info = agent.act(ob)
@@ -93,11 +93,11 @@ class Filter:
         self.v = self.v * (self.n / (self.n + 1)) + (o - self.m1)**2 * 1/(1 + self.n)
         self.std = (self.v + 1e-6)**.5 # std
         self.n += 1
-        if self.filter_mean: 
+        if self.filter_mean:
             o1 =  (o - self.m1)/self.std
         else:
             o1 =  o/self.std
-        o1 = (o1 > 10) * 10 + (o1 < -10)* (-10) + (o1 < 10) * (o1 > -10) * o1 
+        o1 = (o1 > 10) * 10 + (o1 < -10)* (-10) + (o1 < 10) * (o1 > -10) * o1
         return o1
 filter = Filter()
 filter_std = Filter()
@@ -109,7 +109,7 @@ def rollout_contin(env, agent, max_pathlength, n_timesteps, render=False):
     while timesteps_sofar < n_timesteps:
         obs, actions, rewards, action_dists_mu, action_dists_logstd = [], [], [], [], []
         ob = filter(env.reset())
-        for _ in xrange(max_pathlength):
+        for _ in range(max_pathlength):
             timesteps_sofar += 1
             obs.append(ob)
             action, info = agent.act(ob)
@@ -122,7 +122,7 @@ def rollout_contin(env, agent, max_pathlength, n_timesteps, render=False):
             if render and first: env.render()
             if res[2] or timesteps_sofar == n_timesteps:
                 # forceful termination if timesteps_sofar == n_timesteps
-                # otherwise paths is empty, which also is bad. 
+                # otherwise paths is empty, which also is bad.
                 path = dict2(obs = np.concatenate(np.expand_dims(obs, 0)),
                              action_dists_mu = np.concatenate(action_dists_mu),
                              action_dists_logstd = np.concatenate(action_dists_logstd),
@@ -163,7 +163,7 @@ def cat_sample(prob_nk):
     N = prob_nk.shape[0]
     csprob_nk = np.cumsum(prob_nk, axis=1)
     out = np.zeros(N, dtype='i')
-    for (n, csprob_k, r) in zip(xrange(N), csprob_nk, np.random.rand(N)):
+    for (n, csprob_k, r) in zip(range(N), csprob_nk, np.random.rand(N)):
         for (k, csprob) in enumerate(csprob_k):
             if csprob > r:
                 out[n] = k
@@ -184,30 +184,21 @@ def numel(x):
 
 def flatgrad(loss, var_list):
     grads = tf.gradients(loss, var_list)
-    return tf.concat(0, [tf.reshape(grad, [numel(v)])
-                         for (v, grad) in zip(var_list, grads)])
-
+    return tf.concat(axis=0, values=[tf.reshape(grad, [numel(v)]) for (v, grad) in zip(var_list, grads)])
 
 class SetFromFlat(object):
 
     def __init__(self, session, var_list):
         self.session = session
         assigns = []
-        shapes = map(var_shape, var_list)
+        shapes = list(map(var_shape, var_list)) # note, here is the needed change.
         total_size = sum(np.prod(shape) for shape in shapes)
-        self.theta = theta = tf.placeholder(dtype, [total_size])
+        self.theta = tf.placeholder(tf.float32, [total_size])
         start = 0
         assigns = []
         for (shape, v) in zip(shapes, var_list):
             size = np.prod(shape)
-            assigns.append(
-                tf.assign(
-                    v,
-                    tf.reshape(
-                        theta[
-                            start:start +
-                            size],
-                        shape)))
+            assigns.append(tf.assign(v,tf.reshape(self.theta[start:start + size],shape)))
             start += size
         self.op = tf.group(*assigns)
 
@@ -216,14 +207,12 @@ class SetFromFlat(object):
 
 
 class GetFlat(object):
-
     def __init__(self, session, var_list):
         self.session = session
-        self.op = tf.concat(0, [tf.reshape(v, [numel(v)]) for v in var_list])
+        self.op = tf.concat(axis=0, values=[tf.reshape(v, [numel(v)]) for v in var_list])
 
     def __call__(self):
         return self.op.eval(session=self.session)
-
 
 def slice_2d(x, inds0, inds1):
     # in tf
@@ -257,7 +246,7 @@ def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
     r = b.copy()
     x = np.zeros_like(b)
     rdotr = r.dot(r)
-    for i in xrange(cg_iters):
+    for i in range(cg_iters):
         z = f_Ax(p)
         v = rdotr / p.dot(z)
         x += v * p

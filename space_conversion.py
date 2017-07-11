@@ -63,7 +63,7 @@ class SpaceConversionEnv(Env):
             # was a typo
             self._observation_space_ = env.observation_space
 
-        for pairs, convert in self.convertable.iteritems():
+        for pairs, convert in self.convertable.items():
             if env.action_space.__class__ == pairs[0] and \
                target_action_space == pairs[1] and \
                self.action_convert is None:

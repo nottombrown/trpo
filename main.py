@@ -8,6 +8,7 @@ from sys import argv
 import prettytensor as pt
 from gym import envs
 from gym.spaces import Box
+from gym.wrappers import Monitor
 
 from utils import *
 
@@ -197,6 +198,7 @@ class TRPO(object):
 logging.getLogger().setLevel(logging.DEBUG)
 
 env = envs.make(args.task)
+env = Monitor(env, '/tmp/trpo_ilyasu')
 
 agent = TRPO(env)
 agent.learn()

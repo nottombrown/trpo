@@ -29,16 +29,14 @@ def gauss_log_prob(mu, logstd, x):
     return tf.reduce_sum(gp, [1])
 
 def gauss_selfKL_firstfixed(mu, logstd):
-    # basically:  compute KL with yourself, where the first
-    # argument is treated as a constant.  I can do it, totally.
+    """Compute KL with yourself, where the first argument is treated as a constant. """
     mu1, logstd1 = map(tf.stop_gradient, [mu, logstd])
     mu2, logstd2 = mu, logstd
 
     return gauss_KL(mu1, logstd1, mu2, logstd2)
 
 def gauss_KL(mu1, logstd1, mu2, logstd2):
-    # basically:  compute KL with yourself, where the first
-    # argument is treated as a constant.  I can do it, totally.
+    """Compute KL"""
     var1 = tf.exp(2 * logstd1)
     var2 = tf.exp(2 * logstd2)
 

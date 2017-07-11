@@ -41,7 +41,7 @@ class TRPO(object):
         self.env = env
         if not isinstance(env.observation_space, Box) or\
                 not isinstance(env.action_space, Box):
-            print("Both the input space and the output space should be continous.")
+            print("Both the input space and the output space should be continuous.")
             print("(Probably OK to remove the requirement for the input space).")
             exit(-1)
         self.session = tf.Session()
@@ -51,24 +51,25 @@ class TRPO(object):
         act_dim = np.prod(env.action_space.shape)
         self.action = action = tf.placeholder(tf.float32, shape=[None, act_dim])
         self.advant = advant = tf.placeholder(dtype, shape=[None])
-        self.oldaction_dist_mu = oldaction_dist_mu = tf.placeholder(dtype, shape=[None, act_dim])
-        self.oldaction_dist_logstd = oldaction_dist_logstd = tf.placeholder(dtype, shape=[None, act_dim])
+        self.oldaction_dist_mu = old_action_dist_mu = tf.placeholder(dtype, shape=[None, act_dim])
+        self.oldaction_dist_logstd = old_action_dist_logstd = tf.placeholder(dtype, shape=[None, act_dim])
 
         # Create neural network.
         action_dist_mu = (pt.wrap(self.obs).
             fully_connected(64, activation_fn=tf.nn.relu).
             fully_connected(64, activation_fn=tf.nn.relu).
-            fully_connected(act_dim))  # output means and logstd's.  Good!
+            fully_connected(act_dim))  # output means and logstd's
+
         action_dist_logstd_param = tf.Variable((.01 * np.random.randn(1, act_dim)).astype(np.float32))
         action_dist_logstd = tf.tile(action_dist_logstd_param, tf.stack((tf.shape(action_dist_mu)[0], 1)))
 
-        eps = 1e-8
         self.action_dist_mu = action_dist_mu
         self.action_dist_logstd = action_dist_logstd
         N = tf.shape(obs)[0]
+
         # compute probabilities of current actions and old action
         log_p_n = gauss_log_prob(action_dist_mu, action_dist_logstd, action)
-        log_oldp_n = gauss_log_prob(oldaction_dist_mu, oldaction_dist_logstd, action)
+        log_oldp_n = gauss_log_prob(old_action_dist_mu, old_action_dist_logstd, action)
 
         # proceed as before, good.
         ratio_n = tf.exp(log_p_n - log_oldp_n)
@@ -77,12 +78,13 @@ class TRPO(object):
         var_list = tf.trainable_variables()
 
         # Introduced the change into here: 
-        kl = gauss_KL(oldaction_dist_mu, oldaction_dist_logstd,
+        kl = gauss_KL(old_action_dist_mu, old_action_dist_logstd,
             action_dist_mu, action_dist_logstd) / Nf
         ent = gauss_ent(action_dist_mu, action_dist_logstd) / Nf
 
         self.losses = [surr, kl, ent]
         self.pg = flatgrad(surr, var_list)
+
         # KL divergence where first arg is fixed
         # replace old->tf.stop_gradient from previous kl
         kl_firstfixed = gauss_selfKL_firstfixed(action_dist_mu, action_dist_logstd) / Nf
@@ -98,8 +100,8 @@ class TRPO(object):
             start += size
         gvp = [tf.reduce_sum(g * t) for (g, t) in zip(grads, tangents)]
         self.fvp = flatgrad(gvp, var_list)
-        self.gf = GetFlat(self.session, var_list)
-        self.sff = SetFromFlat(self.session, var_list)
+        self.get_flat = GetFlat(self.session, var_list)
+        self.set_from_flat = SetFromFlat(self.session, var_list)
         self.session.run(tf.initialize_variables(var_list))
         self.vf = LinearVF()
 
@@ -114,14 +116,14 @@ class TRPO(object):
             dict2(action_dist_mu=action_dist_mu,
                 action_dist_logstd=action_dist_logstd)
 
-    def learn(self, render_freq=50):
+    def learn(self):
         config = self.config
         start_time = time.time()
         numeptotal = 0
 
         for i in range(1, config.n_iter):
             # Generating paths.
-            paths = rollout_contin(
+            paths = rollout(
                 self.env,
                 self,
                 config.max_pathlength,
@@ -154,7 +156,7 @@ class TRPO(object):
                 self.oldaction_dist_mu: action_dist_mu,
                 self.oldaction_dist_logstd: action_dist_logstd}
 
-            thprev = self.gf()
+            thprev = self.get_flat()
 
             def fisher_vector_product(p):
                 feed[self.flat_tangent] = p
@@ -168,15 +170,13 @@ class TRPO(object):
             lm = np.sqrt(shs / config.max_kl)
 
             fullstep = stepdir / lm
-            neggdotstepdir = -g.dot(stepdir)
 
             def loss(th):
-                self.sff(th)
+                self.set_from_flat(th)
                 return self.session.run(self.losses[0], feed_dict=feed)
 
-            theta = linesearch(loss, thprev, fullstep, neggdotstepdir / lm)
             theta = thprev + fullstep
-            self.sff(theta)
+            self.set_from_flat(theta)
 
             surrafter, kloldnew, entropy = self.session.run(
                 self.losses, feed_dict=feed)

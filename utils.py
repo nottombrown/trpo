@@ -52,30 +52,6 @@ def gauss_ent(mu, logstd):
 def gauss_sample(mu, logstd):
     return mu + tf.exp(logstd) * tf.random_normal(tf.shape(logstd))
 
-def rollout(env, agent, max_pathlength, n_timesteps):
-    paths = []
-    timesteps_sofar = 0
-    while timesteps_sofar < n_timesteps:
-        obs, actions, rewards, action_dists = [], [], [], []
-        ob = env.reset()
-        for _ in range(max_pathlength):
-            timesteps_sofar += 1
-            obs.append(ob)
-            action, info = agent.act(ob)
-            actions.append(action)
-            action_dists.append(info.get("action_dist", []))
-            res = env.step(action)
-            ob = res[0]
-            rewards.append(res[1])
-            if res[2] or timesteps_sofar == n_timesteps:  # i.e., if done
-                path = {"obs": np.concatenate(np.expand_dims(obs, 0)),
-                    "action_dists": np.concatenate(action_dists),
-                    "rewards": np.array(rewards),
-                    "actions": np.array(actions)}
-                paths.append(path)
-                break
-    return paths
-
 class Filter:
     def __init__(self, filter_mean=True):
         self.m1 = 0
@@ -98,15 +74,15 @@ class Filter:
 filter = Filter()
 filter_std = Filter()
 
-def rollout_contin(env, agent, max_pathlength, n_timesteps, render=False):
+def rollout(env, agent, max_pathlength, n_timesteps, render=False):
     paths = []
-    timesteps_sofar = 0
+    timesteps_elapsed = 0
     first = True
-    while timesteps_sofar < n_timesteps:
+    while timesteps_elapsed < n_timesteps:
         obs, actions, rewards, action_dists_mu, action_dists_logstd = [], [], [], [], []
         ob = filter(env.reset())
         for _ in range(max_pathlength):
-            timesteps_sofar += 1
+            timesteps_elapsed += 1
             obs.append(ob)
             action, info = agent.act(ob)
             actions.append(action)
@@ -116,7 +92,7 @@ def rollout_contin(env, agent, max_pathlength, n_timesteps, render=False):
             ob = filter(res[0])
             rewards.append((res[1]))
             if render and first: env.render()
-            if res[2] or timesteps_sofar == n_timesteps:
+            if res[2] or timesteps_elapsed == n_timesteps:
                 # forceful termination if timesteps_sofar == n_timesteps
                 # otherwise paths is empty, which also is bad.
                 path = dict2(obs=np.concatenate(np.expand_dims(obs, 0)),
@@ -168,17 +144,16 @@ def var_shape(x):
         "shape function assumes that shape is fully known"
     return out
 
-def numel(x):
+def num_els(x):
     return np.prod(var_shape(x))
 
 def flatgrad(loss, var_list):
     grads = tf.gradients(loss, var_list)
-    return tf.concat(axis=0, values=[tf.reshape(grad, [numel(v)]) for (v, grad) in zip(var_list, grads)])
+    return tf.concat(axis=0, values=[tf.reshape(grad, [num_els(v)]) for (v, grad) in zip(var_list, grads)])
 
 class SetFromFlat(object):
     def __init__(self, session, var_list):
         self.session = session
-        assigns = []
         shapes = list(map(var_shape, var_list))  # note, here is the needed change.
         total_size = sum(np.prod(shape) for shape in shapes)
         self.theta = tf.placeholder(tf.float32, [total_size])
@@ -196,7 +171,7 @@ class SetFromFlat(object):
 class GetFlat(object):
     def __init__(self, session, var_list):
         self.session = session
-        self.op = tf.concat(axis=0, values=[tf.reshape(v, [numel(v)]) for v in var_list])
+        self.op = tf.concat(axis=0, values=[tf.reshape(v, [num_els(v)]) for v in var_list])
 
     def __call__(self):
         return self.op.eval(session=self.session)
@@ -209,21 +184,6 @@ def slice_2d(x, inds0, inds1):
     ncols = shape[1]
     x_flat = tf.reshape(x, [-1])
     return tf.gather(x_flat, inds0 * ncols + inds1)
-
-def linesearch(f, x, fullstep, expected_improve_rate):
-    # in numpy
-    accept_ratio = .1
-    max_backtracks = 10
-    fval = f(x)
-    for (_n_backtracks, stepfrac) in enumerate(.5 ** np.arange(max_backtracks)):
-        xnew = x + stepfrac * fullstep
-        newfval = f(xnew)
-        actual_improve = fval - newfval
-        expected_improve = expected_improve_rate * stepfrac
-        ratio = actual_improve / expected_improve
-        if ratio > accept_ratio and actual_improve > 0:
-            return xnew
-    return x
 
 def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
     # in numpy

@@ -9,7 +9,9 @@ import prettytensor as pt
 from gym import envs
 from gym.spaces import Box
 from gym.wrappers import Monitor
+from rl_teacher.envs import make_with_torque_removed
 
+from summaries import TBLogger
 from utils import *
 
 print('python main.py {}'.format(' '.join(argv)))
@@ -18,6 +20,7 @@ import argparse
 
 parser = argparse.ArgumentParser(description='Test the new good lib.')
 parser.add_argument("--task", type=str, default='InvertedDoublePendulum-v0')
+parser.add_argument("--name", type=str, default='unnamed_experiment')
 parser.add_argument("--timesteps_per_batch", type=int, default=20000)
 parser.add_argument("--max_pathlength", type=int, default=2000)
 parser.add_argument("--n_iter", type=int, default=30)
@@ -122,6 +125,8 @@ class TRPO(object):
         config = self.config
         start_time = time.time()
         timesteps_elapsed = 0
+        episodes_elapsed = 0
+        tb_logger = TBLogger("no_torque")
 
         for i in range(1, config.n_iter):
             # Generating paths.
@@ -183,12 +188,19 @@ class TRPO(object):
 
             stats = {}
             timesteps_elapsed += sum([len(path["rewards"]) for path in paths])
-            stats["Total number of times steps"] = timesteps_elapsed
-            stats["Average sum of rewards per episode"] = ep_rewards.mean()
-            stats["Entropy"] = entropy
+            episodes_elapsed += len(path["rewards"])
+            stats["timesteps_elapsed"] = timesteps_elapsed
+            stats["episodes_elapsed"] = episodes_elapsed
+            stats["reward_mean_per_episode"] = ep_rewards.mean()
+            stats["entropy"] = entropy
+            stats["kl_difference_between_old_and_new"] = kl_old_new
+            stats["surrogate_loss"] = surrogate_loss
+
+            for k, v in stats.items():
+                tb_logger.log(k, v)
+            tb_logger.summary_step += 1
+
             stats["Time elapsed"] = "%.2f mins" % ((time.time() - start_time) / 60.0)
-            stats["KL between old and new distribution"] = kl_old_new
-            stats["Surrogate loss"] = surrogate_loss
             print("\n********** Iteration {} ************".format(i))
             for k, v in stats.items():
                 print(k + ": " + " " * (40 - len(k)) + str(v))
@@ -197,8 +209,15 @@ class TRPO(object):
 
 logging.getLogger().setLevel(logging.DEBUG)
 
-env = envs.make(args.task)
-env = Monitor(env, '/tmp/trpo_ilyasu')
+# env = envs.make(args.task)
+env_id = args.task
+env = make_with_torque_removed(env_id)
+# env = Monitor(env, '/tmp/trpo_ilyasu')
+# def capped_cubic_video_schedule(episode_id):
+#     if episode_id < 1000:
+#         return int(round(episode_id ** (1. / 3))) ** 3 == episode_id
+#     else:
+#         return episode_id % 1000 == 0
 
 agent = TRPO(env)
 agent.learn()
